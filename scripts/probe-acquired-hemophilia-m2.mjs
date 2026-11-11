@@ -401,6 +401,20 @@ async function main() {
     primerEntries.filter((e) => e.visible).length >= 2 && !!secondEntry && secondOpened && secondFocusBack,
     { entries: primerEntries, secondOpened, secondFocusBack })
 
+  /* ---------- MT03：指标页与一图秀同一目录（组名/顺序/项数一致） ---------- */
+  {
+    const dirs = await page.evaluate(() => {
+      const app = window.__AHA_APP__
+      app.state.profileId = 'demo-b'
+      app.state.page = 'labs'; app.state.sub.labs = 'list'; app.render()
+      const listGroups = [...document.querySelectorAll('#main .section-title h2')].map(h => h.textContent.trim())
+      app.state.page = 'records'; app.state.sub.records = 'metrics'; app.render()
+      const cardGroups = [...document.querySelectorAll('.metric-group-head h3')].map(h => h.textContent.trim())
+      return { listGroups, cardGroups }
+    })
+    t('MT03', '化验列表与指标检测页分组同名同序（先证两边非空）', dirs.listGroups.length > 0 && dirs.listGroups.join('|') === dirs.cardGroups.join('|'), dirs)
+  }
+
   /* ---------- MT12：700/620 宽 + 大字 无整页横向溢出，二列→一列 ---------- */
   {
     const cdp = await page.target().createCDPSession()
