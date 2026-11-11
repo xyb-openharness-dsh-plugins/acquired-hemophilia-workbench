@@ -9,11 +9,11 @@
   --muted: #7b8894;
   --line: #e4e1dc;
   --line-strong: #cfcac2;
-  --brand: #2f6f8f;          /* 品牌蓝（心血管，非家族粉/橙占位） */
-  --brand-deep: #235069;
-  --brand-soft: #e7f0f5;
-  --action: #c96f2f;         /* 行动暖橙 */
-  --action-hover: #b2601f;
+  --brand: #9d3b52;          /* 品牌莓红（获得性血友病 · 凝血/止血，非家族粉/橙占位） */
+  --brand-deep: #7d2c40;
+  --brand-soft: #f6e9ec;
+  --action: #9d3b52;         /* 行动莓红（与品牌同族） */
+  --action-hover: #7d2c40;
   --ok: #2e7d5b;
   --ok-bg: #e8f3ee;
   --warn: #a05a00;
