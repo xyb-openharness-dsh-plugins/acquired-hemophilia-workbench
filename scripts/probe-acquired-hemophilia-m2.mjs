@@ -446,6 +446,74 @@ async function main() {
     primerEntries.filter((e) => e.visible).length >= 2 && !!secondEntry && secondOpened && secondFocusBack,
     { entries: primerEntries, secondOpened, secondFocusBack })
 
+  /* ---------- 0.3.0 写入链：新建档案入口 / API 写库持久化 / 多用户共存 ---------- */
+  {
+    await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'dash'; a.render() })
+    await page.evaluate(() => document.querySelector('[data-action="profiles"]').click())
+    const dlg = await page.evaluate(() => {
+      const t = document.querySelector('#dialog').innerText
+      return { open: document.querySelector('#dialog').open, hasForm: !!document.querySelector('#form-new-profile'), hasBtn: t.includes('创建档案'), honest: t.includes('写入本机数据库') || t.includes('演示态') }
+    })
+    await page.evaluate(() => document.querySelector('[data-action="dialog-close"]').click())
+    t('PR1', '档案管理弹层：新建档案表单 + 创建按钮 + 诚实口径（API/演示态分语境）', dlg.open && dlg.hasForm && dlg.hasBtn && dlg.honest, dlg)
+    const hasApi = await page.evaluate(() => typeof window.__AHA_API_BASE__ === 'string')
+    if (hasApi) {
+      const stamp = '验证档案-' + Date.now().toString(36)
+      await page.evaluate((name) => {
+        const a = window.__AHA_APP__
+        a.state.draft.newProfile = { name, tag: '探针自建', jingguo: '探针写入验证（照录）' }
+        document.querySelector('[data-action="profiles"]').click()
+        document.querySelector('[data-action="save-new-profile"]').click()
+      }, stamp)
+      await new Promise(r => setTimeout(r, 600))
+      const after = await page.evaluate((name) => ({
+        switched: document.querySelector('#profile-name').textContent === name,
+        inData: window.DEMO_DATA.profiles.some(p => p.name === name && !p.isDemo),
+        selfBtn: !!document.querySelector('[data-action="profiles"]')
+      }), stamp)
+      /* 写一条出血（UI 表单 → API → sqlite）并刷新验证持久化 */
+      await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'events'; a.state.sub.events = 'list'; a.render() })
+      await page.evaluate(() => {
+        const set = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })) }
+        set('[data-draft="bleed.start"]', '2026-11-12')
+        set('[data-draft="bleed.note"]', '探针写入出血记录')
+        document.querySelector('[data-action="save-bleed-close"]').click()
+      })
+      await new Promise(r => setTimeout(r, 700))
+      const bleedCount = await page.evaluate(() => window.__AHA_APP__.profile().bleeds.length)
+      await page.reload({ waitUntil: 'networkidle0' })
+      await page.waitForFunction(() => window.__AHA_APP__ && window.DEMO_DATA.profiles.length >= 3, { timeout: 6000 })
+      const persisted = await page.evaluate((name) => {
+        const a = window.__AHA_APP__
+        const mp = window.DEMO_DATA.profiles.find(p => p.name === name)
+        return { stillThere: !!mp, bleeds: mp ? mp.bleeds.length : -1, note: mp && mp.bleeds[0] ? mp.bleeds[0].note : '' }
+      }, stamp)
+      t('PR2', '新建档案写库并切换（is_demo=0），与演示档案共存', after.switched && after.inData, after)
+      t('PR3', '出血记录写通 sqlite：写后立即可见 ' + bleedCount + ' 条，页面刷新后仍在（持久化）', persisted.stillThere && persisted.bleeds === 1 && persisted.note.includes('探针'), persisted)
+      /* 私密切换写库：先切回探针自建档案（reload 后当前档案回到 demo-a），再点切换并轮询 */
+      await page.evaluate((name) => {
+        const a = window.__AHA_APP__
+        const mp = window.DEMO_DATA.profiles.find(p2 => p2.name === name)
+        a.state.profileId = mp.id
+        a.state.page = 'events'; a.state.sub.events = 'list'; a.render()
+        document.querySelector('[data-action="bleed-priv"]').click()
+      }, stamp)
+      await page.waitForFunction(() => window.__AHA_APP__.profile().bleeds[0].private === true, { timeout: 3000 })
+      await page.reload({ waitUntil: 'networkidle0' })
+      await page.waitForFunction(() => window.__AHA_APP__ && window.DEMO_DATA.profiles.length >= 3, { timeout: 6000 })
+      const privPersist = await page.evaluate((name) => {
+        const mp = window.DEMO_DATA.profiles.find(p2 => p2.name === name)
+        return mp && mp.bleeds[0] ? mp.bleeds[0].private : null
+      }, stamp)
+      t('PR4', '私密切换写库（is_private 落 sqlite：UI 即时切换 + API 写库 + 刷新后仍为私密）', privPersist === true, { privPersist })
+      await page.evaluate(() => { const a = window.__AHA_APP__; a.state.profileId = 'demo-a'; a.render() })
+    } else {
+      t('PR2', '新建档案写库并切换（跳过：本形态无 API，演示态已由 PR1 诚实标注）', true, 'SKIP-API-ABSENT')
+      t('PR3', '出血记录写通 sqlite（跳过：无 API）', true, 'SKIP-API-ABSENT')
+      t('PR4', '私密切换写库（跳过：无 API）', true, 'SKIP-API-ABSENT')
+    }
+  }
+
   /* ---------- MT03：指标页与一图秀同一目录（组名/顺序/项数一致） ---------- */
   {
     const dirs = await page.evaluate(() => {

@@ -76,6 +76,24 @@ function stripMount(pathname) {
   return pathname;
 }
 
+/** 读 JSON body（≤64KB）；失败走 sendJson(400) 并返回 null（调用方短路）。 */
+async function readBody(req, res, sendJson) {
+  try {
+    const chunks = [];
+    let size = 0;
+    for await (const c of req) {
+      size += c.length;
+      if (size > 65536) { sendJson(res, 413, { error: 'body too large' }); return null; }
+      chunks.push(c);
+    }
+    const text = Buffer.concat(chunks).toString('utf8');
+    return text ? JSON.parse(text) : {};
+  } catch (error) {
+    sendJson(res, 400, { error: 'invalid JSON body', detail: String(error.message || error) });
+    return null;
+  }
+}
+
 export function createHandler({ apiBase = '', publicDir, services }) {
   const sendJson = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -108,6 +126,23 @@ export function createHandler({ apiBase = '', publicDir, services }) {
       } catch (error) {
         return sendJson(res, 500, { error: 'trials failed', detail: String(error.message || error) });
       }
+    }
+    /* ---------- 写入 API（0.3.0）：POST /profiles、POST /profiles/{key}/{kind}、POST /privacy ---------- */
+    const mProfileEntry = pathname.match(new RegExp('^' + apiPrefix + '/profiles/([a-z0-9-]+)/(' + Object.keys(services.kinds || {}).join('|') + ')$'));
+    if (pathname === apiPrefix + '/profiles' && req.method === 'POST') {
+      const body = await readBody(req, res, sendJson); if (body === null) return;
+      try { return sendJson(res, 200, services.createProfile(body || {})); }
+      catch (error) { return sendJson(res, 400, { error: 'createProfile failed', detail: String(error.message || error) }); }
+    }
+    if (mProfileEntry && req.method === 'POST') {
+      const body = await readBody(req, res, sendJson); if (body === null) return;
+      try { return sendJson(res, 200, services.addEntry(mProfileEntry[1], mProfileEntry[2], body || {})); }
+      catch (error) { return sendJson(res, 400, { error: 'addEntry failed', detail: String(error.message || error) }); }
+    }
+    if (pathname === apiPrefix + '/privacy' && req.method === 'POST') {
+      const body = await readBody(req, res, sendJson); if (body === null) return;
+      try { return sendJson(res, 200, services.setPrivacy(body || {})); }
+      catch (error) { return sendJson(res, 400, { error: 'setPrivacy failed', detail: String(error.message || error) }); }
     }
     if (pathname.startsWith(apiPrefix + '/')) return sendJson(res, 404, { error: 'Unknown API route' });
 

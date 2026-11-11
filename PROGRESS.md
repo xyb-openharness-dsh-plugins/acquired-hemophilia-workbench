@@ -1,6 +1,6 @@
 # PROGRESS · acquired-hemophilia-workbench（小凝宝 CoagPal）
 
-> 更新：2026-11-12 06:45 · 0.2.0 试验线补齐轮（用户点名「无临床试验是没有还是未实现」→ 实测 205 条快照相关 0，推翻裁剪、按 35 号补齐）· 认领 Issue #71（claimed）
+> 更新：2026-11-12 07:10 · 0.3.0 写入闭环轮（用户点名「新建患者入口无、只有模拟数据」→ 新建档案 + 多用户 + 写通 sqlite）· 认领 Issue #71（claimed）
 
 ## 当前里程碑：M9 回流完成；全部闸口为「自动签认（待晨审追认）」；V3 UI 点击走查待人工
 
@@ -32,6 +32,12 @@
 - M4：fetch-acquired-hemophilia-trials-2026.mjs 四通道实跑 → 四件套 205 条（相关 0/205 如实；两次有界重试确认通道召回噪声）；对账 check-trial-snapshot PASS
 - 35 号四段链路 UI 三子页 + trial-match.js 纯函数 + check-trial-matching 入链 + probe TR1–TR7（46/46 双形态）+ test 36/36 + Desktop 0.2.0 装机 verify 通过
 - 文档：DEV-REQUIREMENTS §三/CLINICAL-DATA/SPEC ADR-3/README/CHANGELOG 同步；签认 docs/signoffs/M4-完成记-0.2.0.md
+
+## 0.3.0 写入闭环轮（2026-11-12 07:10）
+- 服务层三组写 API（POST /profiles、/profiles/{key}/{八类}、/privacy）+ Workbench createProfile/addEntry/setPrivacy/listProfiles（合成 id 对齐读模型）
+- UI：档案管理弹层（演示/自建标记 + 新建表单）+ 全部录入与私密切换双通道（API 写库回读 / 演示态如实标注）
+- 门禁：test 40/40（write-api 四断言）、探针 50/50 双形态（PR1–PR4 写库/持久化/私密）、check exit 0、audit 44/44
+- 装机：0.3.0 tgz（42 files，sha256 7564b7ef…a9）装入 Desktop profile verify 通过；签认 docs/signoffs/写入口-0.3.0-自动签认.md
 
 ## 下一步（晨审）
 1. 追认全部自动签认与 DEV-REQUIREMENTS §五默认值（含品牌占位名「小凝宝 CoagPal」）

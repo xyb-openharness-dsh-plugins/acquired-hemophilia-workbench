@@ -946,6 +946,36 @@
     }
   }
 
+
+  /* ---------- 写入通道（0.3.0）：API 存在 → 写通 sqlite；否则演示态（内存，刷新重置，如实标注） ---------- */
+  function apiBase() {
+    return typeof global.__AHA_API_BASE__ === 'string' ? global.__AHA_API_BASE__ : null
+  }
+  async function apiPost(path, body) {
+    var base = apiBase()
+    if (base == null) return null
+    try {
+      var r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) })
+      if (!r.ok) return null
+      return await r.json()
+    } catch (e) { return null }
+  }
+  async function refreshBootstrap() {
+    var base = apiBase()
+    if (base == null) return false
+    try {
+      var r = await fetch(base + '/api/bootstrap')
+      if (!r.ok) return false
+      var b = await r.json()
+      if (!b || !Array.isArray(b.profiles) || !b.profiles.length) return false
+      DATA.TODAY = b.TODAY
+      DATA.profiles = b.profiles
+      if (b.trialSnapshot) DATA.snapshotMeta = b.trialSnapshot
+      if (!DATA.profiles.some(function (p2) { return p2.id === state.profileId })) state.profileId = DATA.profiles[0].id
+      render()
+      return true
+    } catch (e) { return false }
+  }
   /* ---------- 整页视图（32 号 · starter probe-page-view 契约）----------
    * history 是导航栈唯一真源：每层一条 pushState；Esc/返回退一层；✕ 关全部。
    * 结构：.pv-overlay > .pv-panel(.pv-head(.pv-title+.pv-head-actions(返回,✕)) + .pv-crumb + .pv-body)
@@ -1142,17 +1172,70 @@
     else if (act === 'save-feel-continue' || act === 'save-feel-close') { saveFeel(act === 'save-feel-close') }
     else if (act === 'save-family-continue' || act === 'save-family-close') { saveFamily(act === 'save-family-close') }
     else if (act === 'hospital-edit') { toast('更正=新增版本（本原型演示入口；开发版打开表单并保留历史版本）') }
+    else if (act === 'save-new-profile') {
+      var np = state.draft.newProfile || {}
+      if (!np.name || !np.name.trim()) { toast('档案名称为必填'); return }
+      void (async function () {
+        if (apiBase() != null) {
+          var res = await apiPost('/api/profiles', { name: np.name.trim(), tag: np.tag || '自建档案', facts: np.jingguo ? { 确诊经过: np.jingguo } : {} })
+          if (res && res.profileKey) {
+            delete state.draft.newProfile
+            closeDialog()
+            await refreshBootstrap()
+            state.profileId = res.profileKey
+            state.sessions = {}; state.draft = {}
+            render()
+            toast('档案已创建并写入本机数据库；空档案各页都有「＋」入口可以开始记录')
+            return
+          }
+          toast('创建失败（数据库不可写）；下面按演示态建一个内存档案')
+        }
+        var localId = 'local-' + Date.now().toString(36)
+        DATA.profiles.push({ id: localId, name: np.name.trim(), tag: (np.tag || '自建') + ' · 演示态', isDemo: false,
+          profile: np.jingguo ? { 确诊经过: np.jingguo } : {},
+          bleeds: [], labs: [], treatments: [], meds: [], questions: [], hospitals: [], reports: [], docs: [], mind: { feel: [], family: [] } })
+        delete state.draft.newProfile
+        closeDialog()
+        state.profileId = localId
+        state.sessions = {}; state.draft = {}
+        render()
+        toast('演示态档案已创建（刷新重置）；接入开发版/宿主后同入口写数据库')
+      })()
+    }
     else if (act === 'bleed-priv') {
       var f = p.bleeds.find(function (z) { return z.id === btn.getAttribute('data-id') })
-      f.private = !f.private; render(); toast('私密标记已切换；三出口共用同一过滤')
+      var next = !f.private
+      f.private = next; render(); toast('私密标记已切换；三出口共用同一过滤')
+      if (apiBase() != null) {
+        apiPost('/api/privacy', { profileKey: state.profileId, kind: 'bleed', id: f.id, private: next }).then(function (res) {
+          if (res && res.ok) { refreshBootstrap(); toast('私密标记已写入数据库') }
+          else { f.private = !next; render(); toast('写库失败：私密标记已回退（演示态）') }
+        })
+      }
     }
     else if (act === 'q-priv') {
       var q = p.questions.find(function (z) { return z.id === btn.getAttribute('data-id') })
-      q.private = !q.private; render()
+      var qn = !q.private
+      q.private = qn; render()
+      if (apiBase() != null) {
+        apiPost('/api/privacy', { profileKey: state.profileId, kind: 'question', id: q.id, private: qn }).then(function (res) {
+          if (res && res.ok) { refreshBootstrap(); toast('私密标记已写入数据库') }
+          else { q.private = !qn; render(); toast('写库失败：私密标记已回退（演示态）') }
+        })
+      }
     }
     else if (act === 'feel-priv') {
-      var x = p.mind.feel[sharedOnly(p.mind.feel).map(function (z) { return z }).length ? sharedIndex(p.mind.feel, Number(btn.getAttribute('data-i'))) : -1]
-      if (x) { x.private = !x.private; render() }
+      var actualIdx = sharedIndex(p.mind.feel, Number(btn.getAttribute('data-i')))
+      var x = p.mind.feel[actualIdx]
+      if (!x) { render(); return }
+      var xn = !x.private
+      x.private = xn; render()
+      if (apiBase() != null) {
+        apiPost('/api/privacy', { profileKey: state.profileId, kind: 'mind', id: 'feel' + actualIdx, private: xn }).then(function (res) {
+          if (res && res.ok) { refreshBootstrap(); toast('私密标记已写入数据库') }
+          else { x.private = !xn; render(); toast('写库失败：私密标记已回退（演示态）') }
+        })
+      }
     }
     else if (act === 'mineru-consent') {
       var c = $('#mineru-consent')
@@ -1204,61 +1287,117 @@
       render()
     }
   })
-  function saveBleed(keep) {
+  async function saveBleed(keep) {
     var d = state.draft.bleed || {}
     if (!d.start) { $('#bleed-err').textContent = '开始日期为必填项。'; return }
-    profile().bleeds.push({ id: 'new-' + Date.now(), start: d.start, end: d.end || null, trigger: d.trigger || '', note: d.note || '', private: !!d.private })
+    var payload = { start: d.start, end: d.end || null, trigger: d.trigger || '', note: d.note || '', private: !!d.private }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/bleed', payload)
+      delete state.draft.bleed
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；可继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().bleeds.push({ id: 'new-' + Date.now(), start: payload.start, end: payload.end, trigger: payload.trigger, note: payload.note, private: payload.private })
     delete state.draft.bleed
-    if (keep) { render(); toast('已保存 1 条（演示）；可继续录入') } else { render(); toast('已保存并关闭（演示）') }
+    if (keep) { render(); toast('已保存 1 条（演示态，刷新重置）；可继续录入') } else { render(); toast('已保存并关闭（演示态，刷新重置）') }
   }
-  function saveTreat(keep) {
+  async function saveTreat(keep) {
     var d = state.draft.treat || {}
     if (!d.date || !d.name) { $('#treat-err').textContent = '日期与内容为必填项。'; return }
-    profile().treatments.push({ id: 'new-' + Date.now(), date: d.date, kind: d.kind || '按次', name: d.name, note: d.note || '', private: false })
+    var payload = { date: d.date, kind: d.kind || '按次', name: d.name, note: d.note || '', private: false }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/treatment', payload)
+      if (!keep) delete state.draft.treat
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().treatments.push({ id: 'new-' + Date.now(), date: payload.date, kind: payload.kind, name: payload.name, note: payload.note, private: false })
     if (!keep) delete state.draft.treat
-    render(); toast(keep ? '已保存（演示）；继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存（演示态，刷新重置）；继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveQ(keep) {
+  async function saveQ(keep) {
     var d = state.draft.q || {}
     if (!d.q) { toast('问题内容为必填'); return }
-    profile().questions.push({ id: 'new-' + Date.now(), q: d.q, addedOn: TODAY, answered: false, private: false })
+    var payload = { q: d.q, private: false }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/question', payload)
+      if (!keep) delete state.draft.q
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().questions.push({ id: 'new-' + Date.now(), q: payload.q, addedOn: TODAY, answered: false, private: false })
     if (!keep) delete state.draft.q
-    render(); toast(keep ? '已保存（演示）；继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存（演示态，刷新重置）；继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveLab(keep) {
+  async function saveLab(keep) {
     var d = state.draft.lab || {}
     if (!d.date || !d.value) { toast('日期与结果为必填'); return }
-    profile().labs.push({ id: 'new-' + Date.now(), metric: d.metric || 'Hb', date: d.date, value: Number(d.value) || d.value, unit: d.unit || '', method: d.method || '', org: d.org || '', private: false })
+    var payload = { metric: d.metric || 'Hb', date: d.date, value: Number(d.value) || d.value, unit: d.unit || '', method: d.method || '', org: d.org || '', private: false }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/lab', payload)
+      if (!keep) delete state.draft.lab
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；可继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().labs.push({ id: 'new-' + Date.now(), metric: payload.metric, date: payload.date, value: payload.value, unit: payload.unit, method: payload.method, org: payload.org, private: false })
     if (!keep) delete state.draft.lab
-    render(); toast(keep ? '已保存 1 条（演示）；可继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存 1 条（演示态，刷新重置）；可继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveReport(keep) {
+  async function saveReport(keep) {
     var d = state.draft.report || {}
     if (!d.title) { toast('报告名称为必填'); return }
-    profile().reports.push({ id: 'new-' + Date.now(), title: d.title, date: d.date || null, kind: d.kind || '其他', source: d.source || '未取得原件', keydesc: d.keydesc || '', private: false })
+    var payload = { title: d.title, date: d.date || null, kind: d.kind || '其他', source: d.source || '未取得原件', keydesc: d.keydesc || '', private: false }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/report', payload)
+      if (!keep) delete state.draft.report
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().reports.push({ id: 'new-' + Date.now(), title: payload.title, date: payload.date, kind: payload.kind, source: payload.source, keydesc: payload.keydesc, private: false })
     if (!keep) delete state.draft.report
-    render(); toast(keep ? '已保存（演示）；继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存（演示态，刷新重置）；继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveFeel(keep) {
+  async function saveFeel(keep) {
     var d = state.draft.feel || {}
     if (!d.text) { toast('感受内容为必填'); return }
-    profile().mind.feel.push({ d: d.d || TODAY, text: d.text, author: '本人', private: !!d.private })
+    var payload = { mindKind: 'feel', d: d.d || TODAY, text: d.text, private: !!d.private }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/mind', payload)
+      if (!keep) delete state.draft.feel
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().mind.feel.push({ d: payload.d, text: payload.text, author: '本人', private: payload.private })
     if (!keep) delete state.draft.feel
-    render(); toast(keep ? '已保存（演示）；继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存（演示态，刷新重置）；继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveFamily(keep) {
+  async function saveFamily(keep) {
     var d = state.draft.family || {}
     if (!d.text) { toast('事项为必填'); return }
-    profile().mind.family.push({ d: d.d || TODAY, text: d.text, author: d.author || '家属', private: false })
+    var payload = { mindKind: 'family', d: d.d || TODAY, text: d.text, author: d.author || '家属', private: false }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/mind', payload)
+      if (!keep) delete state.draft.family
+      if (res && res.ok) { await refreshBootstrap(); toast(keep ? '已保存到本机数据库；继续录入' : '已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().mind.family.push({ d: payload.d, text: payload.text, author: payload.author, private: false })
     if (!keep) delete state.draft.family
-    render(); toast(keep ? '已保存（演示）；继续录入' : '已保存并关闭（演示）')
+    render(); toast(keep ? '已保存（演示态，刷新重置）；继续录入' : '已保存并关闭（演示态，刷新重置）')
   }
-  function saveHosp() {
+  async function saveHosp() {
     var d = state.draft.hosp || {}
     if (!d.name) { toast('医院名称为必填'); return }
-    profile().hospitals.push({ id: 'new-' + Date.now(), name: d.name, dept: d.dept || '', contact: d.contact || '未录入', ver: 1 })
+    var payload = { name: d.name, dept: d.dept || '', contact: d.contact || '未录入' }
+    if (apiBase() != null) {
+      var res = await apiPost('/api/profiles/' + state.profileId + '/hospital', payload)
+      delete state.draft.hosp
+      if (res && res.ok) { await refreshBootstrap(); toast('已保存到本机数据库'); return }
+      toast('写入数据库失败：已暂存为演示态（刷新重置）')
+    }
+    profile().hospitals.push({ id: 'new-' + Date.now(), name: payload.name, dept: payload.dept, contact: payload.contact, ver: 1 })
     delete state.draft.hosp
-    render(); toast('已保存（演示）')
+    render(); toast('已保存（演示态，刷新重置）')
   }
   function openDialog(title, html) {
     $('#dialog-title').textContent = title
@@ -1267,10 +1406,21 @@
   }
   function closeDialog() { var d = $('#dialog'); if (d.open) d.close() }
   function openProfiles() {
+    var demoCount = DATA.profiles.filter(function (p) { return p.isDemo }).length
     var html = DATA.profiles.map(function (p) {
-      return '<button style="width:100%;text-align:left;margin-bottom:8px" data-action="pick-profile" data-id="' + p.id + '" aria-pressed="' + (p.id === state.profileId) + '"><b>' + esc(p.name) + '</b> · ' + esc(p.tag) + '</button>'
-    }).join('') + '<p class="small-note">切换后整页数据联动；会话与草稿按档案隔离。全部为合成示例。</p>'
-    openDialog('切换演示档案', html)
+      return '<button style="width:100%;text-align:left;margin-bottom:8px" data-action="pick-profile" data-id="' + p.id + '" aria-pressed="' + (p.id === state.profileId) + '"><b>' + esc(p.name) + '</b> · ' + esc(p.tag) + (p.isDemo ? ' <span class="pill">演示</span>' : ' <span class="pill ok">自建</span>') + '</button>'
+    }).join('') +
+      '<h3 style="margin:14px 0 8px">＋ 新建档案（真实数据，写入本机数据库）</h3>' +
+      '<section class="card" id="form-new-profile"><div class="form-grid">' +
+      '<label>档案名称<span class="req">*</span><input type="text" data-draft="newProfile.name" value="' + esc((state.draft.newProfile || {}).name || '') + '" maxlength="24" placeholder="如：张三（或自己起的管理名）"></label>' +
+      '<label>一句话标签<input type="text" data-draft="newProfile.tag" value="' + esc((state.draft.newProfile || {}).tag || '') + '" maxlength="40" placeholder="如：2026-11 确诊 · 治疗期"></label>' +
+      '<label class="full">确诊经过（可留空后补；照抄医生原话）<input type="text" data-draft="newProfile.jingguo" value="' + esc((state.draft.newProfile || {}).jingguo || '') + '" maxlength="120"></label>' +
+      '</div><div class="actions"><button class="primary" data-action="save-new-profile">创建档案</button><button data-action="cancel-form" data-form="newProfile">取消</button></div>' +
+      '<p class="small-note">' + (apiBase() != null
+        ? '创建后写入本机 SQLite（is_demo=0），与 ' + demoCount + ' 套演示档案共存；随时可切换。'
+        : '当前为独立演示态：新档案只存在内存里（刷新重置）；接入开发版/宿主后同样入口写入本机数据库。') + '</p></section>' +
+      '<p class="small-note">切换后整页数据联动；会话与草稿按档案隔离。演示档案为合成示例，自建档案是你自己的数据。</p>'
+    openDialog('档案管理（' + DATA.profiles.length + '）', html)
   }
 
   /* 面板拖宽 25–45%，键盘步进 2% */
@@ -1400,7 +1550,7 @@ const ROUTES = {
       app.state.flipped = {}
       app.render()
     }
-    window.__CAD_API_BASE__ = apiBase
+    window.__AHA_API_BASE__ = apiBase
     console.info('[acquired-hemophilia] 已切换到本机数据库数据（' + b.profiles.length + ' 个档案）')
   }).catch(function (e) {
     console.warn('[acquired-hemophilia] bootstrap 不可用，继续使用演示数据：', String(e && e.message || e))

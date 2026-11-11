@@ -30,9 +30,13 @@ const handler = createHandler({
   publicDir: join(dirname(fileURLToPath(import.meta.url)), '..', 'public'),
   services: {
     version, displayVersion, buildDate,
-    capabilities: ['bootstrap', 'profile', 'health'],
+    capabilities: ['bootstrap', 'profile', 'health', 'write'],
     bootstrap: () => workbench.bootstrap(),
     trialMatch: (keyword) => workbench.trialMatch(keyword),
+    kinds: Workbench.KINDS,
+    createProfile: (b) => workbench.createProfile(b),
+    addEntry: (key, kind, b) => workbench.addEntry(key, kind, b),
+    setPrivacy: (b) => workbench.setPrivacy(b.profileKey, b.kind, b.id, b.private),
     /* 与宿主形态共用同一个 Workbench 方法：dev 与装机的读模型必须是同一条路径，
        否则"本地验过、装进去不一样"（ATTR 第 6 类的常见成因）。 */
   },

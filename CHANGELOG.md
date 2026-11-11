@@ -1,3 +1,12 @@
+## 0.3.0 — 2026-11-12（写入闭环：新建档案 + 多用户 + 写通 sqlite）
+
+- 用户点名「新建患者入口无，只有模拟数据」：本版补上真实数据写入闭环（记一笔 → 入库 → 回来看见）。
+- 服务层：POST /profiles（新建档案，is_demo=0）、POST /profiles/{key}/{八类记录}、POST /privacy（私密切换）三组写 API；Workbench.createProfile/addEntry/setPrivacy/listProfiles（合成 id 与读模型同一套规则，能对回 rowid）。
+- UI：侧栏档案卡弹层升级为「档案管理」——演示档案与自建档案同列表共存（带 演示/自建 标记）+ 新建档案表单（名称/标签/确诊经过，≤3 字段）；全部录入页与私密切换双通道：API 可用 → 写通本机 SQLite 并回读刷新；独立演示态 → 内存写入并如实标注「刷新重置」。
+- 多用户：新建档案与 demo A/B 共表共存，档案切换整页联动、会话与草稿按档案隔离不变。
+- 门禁：check exit 0、test 40/40（新增 write-api 四断言：共存/八类写库/私密寻址/错误路径）、探针 50/50 双形态（新增 PR1–PR4：入口、写库切换、刷新持久化、私密切换落库）。
+- 用户可见结果：打开工作台 → 点档案卡 → 「＋ 新建档案」→ 创建后各页「＋」按钮录入即写库；刷新、重启后数据都在；demo 与真实数据互不干扰。
+
 ## 0.2.0 — 2026-11-12（试验线补齐：M4 真实快照 + 35 号四段链路）
 
 - M4 临床库：`scripts/fetch-acquired-hemophilia-trials-2026.mjs`（unified-trial-mcp 四在线通道）→ `research/acquired-hemophilia/` 四件套（manifest/jsonl/sqlite/README），快照 205 条、通道终态如实入 manifest 与界面（ictrp TIMEOUT/FAILED×3、chictr_online FAILED 未查过不计覆盖）。

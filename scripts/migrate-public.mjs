@@ -66,7 +66,7 @@ const BOOT_BLOCK = `
       app.state.flipped = {}
       app.render()
     }
-    window.__CAD_API_BASE__ = apiBase
+    window.__AHA_API_BASE__ = apiBase
     console.info('[acquired-hemophilia] 已切换到本机数据库数据（' + b.profiles.length + ' 个档案）')
   }).catch(function (e) {
     console.warn('[acquired-hemophilia] bootstrap 不可用，继续使用演示数据：', String(e && e.message || e))

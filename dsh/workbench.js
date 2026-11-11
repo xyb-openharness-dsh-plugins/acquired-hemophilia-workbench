@@ -62,6 +62,138 @@ export class Workbench {
     return readBootstrap(this.db, profileId);
   }
 
+  /* ---------------- 写入 API（0.3.0：demo + 新建共存，多用户，写通 sqlite） ---------------- */
+
+  /* kind → 表与读模型 id 字符映射（与 readmodels.synthId 同一套，id 才能对回 rowid） */
+  static KINDS = {
+    bleed: { table: 'bleed_events', idChar: 'b' },
+    lab: { table: 'lab_results', idChar: 'l' },
+    treatment: { table: 'treatment_events', idChar: 't' },
+    question: { table: 'visit_questions', idChar: 'q' },
+    hospital: { table: 'hospitals', idChar: 'h' },
+    report: { table: 'reports', idChar: 'r' },
+    doc: { table: 'documents', idChar: 'd' },
+    mind: { table: 'mind_notes', idChar: 'f' },
+  }
+
+  #padFor(profileKey, kind) {
+    /* 与 readmodels.idPad 同一规则：demo-b 的 labs/treatments 是两位手写 id，其余一位 */
+    return (profileKey === 'demo-b' && (kind === 'lab' || kind === 'treatment')) ? 2 : 1
+  }
+
+  #prefix(profileKey) { return String(profileKey || '').replace(/^demo-/, '') }
+
+  /** 按 readmodels 同序取该档案该 kind 的行（ORDER BY rowid），返回 [rowid, syntheticId]。 */
+  #rowsFor(profileKey, kind) {
+    const def = Workbench.KINDS[kind]
+    if (!def) throw new Error('未知记录类型：' + kind)
+    const pad = this.#padFor(profileKey, kind)
+    let where = 'profile_key = ?'
+    const args = [profileKey]
+    if (kind === 'mind') where += " AND kind IN ('feel','family')"
+    const rows = this.db.prepare(`SELECT rowid AS rid FROM ${def.table} WHERE ${where} ORDER BY rowid`).all(...args)
+    return { def, rows: rows.map((r, i) => ({ rid: r.rid, sid: `${this.#prefix(profileKey)}-${def.idChar}${String(i + 1).padStart(pad, '0')}` })) }
+  }
+
+  #today() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  /** 新建档案（真实用户数据；与演示档案同表共存，is_demo=0）。 */
+  createProfile({ name, tag, facts = {} } = {}) {
+    this.open();
+    if (!name || !String(name).trim()) throw new Error('档案名称为必填项');
+    const key = 'user-' + Date.now().toString(36);
+    this.db.prepare('INSERT INTO subjects (profile_key, name, meta, headline, action_plan, dash_keys, created_on, is_demo) VALUES (?,?,?,?,?,?,?,0)')
+      .run(key, String(name).trim().slice(0, 24), tag ? String(tag).slice(0, 40) : null, null, facts['医生行动计划原话'] ?? null, null, this.#today());
+    const factIns = this.db.prepare('INSERT INTO profile_facts (profile_key, fact_key, fact_value, fact_date, ver) VALUES (?,?,?,?,1)');
+    for (const [k, v] of Object.entries(facts)) {
+      if (k === '医生行动计划原话') continue;
+      if (v == null || String(v).trim() === '') continue;
+      factIns.run(key, k, String(v), null);
+    }
+    return { profileKey: key, name: String(name).trim().slice(0, 24) };
+  }
+
+  /** 新增一条记录（写通 sqlite；返回与读模型同形的行，含合成 id）。 */
+  addEntry(profileKey, kind, data = {}) {
+    this.open();
+    const def = Workbench.KINDS[kind];
+    if (!def) throw new Error('未知记录类型：' + kind);
+    const exists = this.db.prepare('SELECT COUNT(*) c FROM subjects WHERE profile_key = ?').get(profileKey).c;
+    if (!exists) throw new Error('档案不存在：' + profileKey);
+    const priv = data.private ? 1 : 0;
+    const now = this.#today();
+    let info;
+    if (kind === 'bleed') {
+      if (!data.start) throw new Error('开始日期为必填项');
+      info = this.db.prepare('INSERT INTO bleed_events (profile_key, start_date, end_date, trigger_text, note, is_private, ver) VALUES (?,?,?,?,?,?,1)')
+        .run(profileKey, data.start, data.end || null, data.trigger || '', data.note || '', priv);
+    } else if (kind === 'lab') {
+      if (!data.date || data.value == null || data.value === '') throw new Error('日期与结果为必填项');
+      /* 展示键（APTT）→ 库键（aptt）：metric_defs.key=库键、title=展示键 */
+      const def2 = this.db.prepare('SELECT key FROM metric_defs WHERE title = ?').get(data.metric);
+      info = this.db.prepare('INSERT INTO lab_results (profile_key, metric_key, measured_on, value, unit, method, org, is_private, note, ver) VALUES (?,?,?,?,?,?,?,?,?,1)')
+        .run(profileKey, def2 ? def2.key : String(data.metric || '').toLowerCase(), data.date, data.value, data.unit || '', data.method || '', data.org || '', priv, null);
+    } else if (kind === 'treatment') {
+      if (!data.date || !data.name) throw new Error('日期与内容为必填项');
+      info = this.db.prepare('INSERT INTO treatment_events (profile_key, event_date, kind, name, note, is_private, ver) VALUES (?,?,?,?,?,?,1)')
+        .run(profileKey, data.date, data.kind || '按次', data.name, data.note || '', priv);
+    } else if (kind === 'question') {
+      if (!data.q) throw new Error('问题内容为必填');
+      info = this.db.prepare('INSERT INTO visit_questions (profile_key, question, added_on, answered_on, is_private, ver) VALUES (?,?,?,NULL,?,1)')
+        .run(profileKey, data.q, now, priv);
+    } else if (kind === 'hospital') {
+      if (!data.name) throw new Error('医院名称为必填');
+      info = this.db.prepare('INSERT INTO hospitals (profile_key, name, dept, contact, ver) VALUES (?,?,?,?,1)')
+        .run(profileKey, data.name, data.dept || '', data.contact || '未录入');
+    } else if (kind === 'report') {
+      if (!data.title) throw new Error('报告名称为必填');
+      info = this.db.prepare('INSERT INTO reports (profile_key, title, kind, reported_on, source_state, key_finding, is_private, ver) VALUES (?,?,?,?,?,?,?,1)')
+        .run(profileKey, data.title, data.kind || '其他', data.date || null, data.source || '未取得原件', data.keydesc || '', priv);
+    } else if (kind === 'doc') {
+      info = this.db.prepare('INSERT INTO documents (profile_key, name, doc_type, doc_date, state, is_private) VALUES (?,?,?,?,?,0)')
+        .run(profileKey, data.name || '未命名资料', data.type || '其他', data.date || null, data.state || '待核对');
+    } else if (kind === 'mind') {
+      if (!data.text) throw new Error('内容为必填');
+      info = this.db.prepare('INSERT INTO mind_notes (profile_key, kind, noted_on, body, author, is_private, ver) VALUES (?,?,?,?,?,?,1)')
+        .run(profileKey, data.mindKind === 'family' ? 'family' : 'feel', data.d || now, data.text, data.author || (data.mindKind === 'family' ? '家属' : '本人'), priv);
+    } else {
+      throw new Error('未知记录类型：' + kind);
+    }
+    const rid = Number(info.lastInsertRowid);
+    const { rows } = this.#rowsFor(profileKey, kind);
+    const hit = rows.find((r) => r.rid === rid);
+    return { ok: true, kind, profileKey, rowid: rid, id: hit ? hit.sid : null };
+  }
+
+  /** 私密切换（更正不改写历史：is_private 是行属性，历史版本各自带标记）。 */
+  setPrivacy(profileKey, kind, idOrIndex, isPrivate) {
+    this.open();
+    const def = Workbench.KINDS[kind];
+    if (!def) throw new Error('未知记录类型：' + kind);
+    let target = null;
+    if (kind === 'mind') {
+      const sub = String(idOrIndex).startsWith('family') ? 'family' : 'feel';
+      const idx = Number(String(idOrIndex).replace(/^(feel|family)/, '')) || 0;
+      const rows = this.db.prepare("SELECT rowid AS rid FROM mind_notes WHERE profile_key = ? AND kind = ? ORDER BY rowid").all(profileKey, sub);
+      target = rows[idx]?.rid ?? null;
+    } else {
+      const { rows } = this.#rowsFor(profileKey, kind);
+      target = rows.find((r) => r.sid === idOrIndex)?.rid ?? null;
+    }
+    if (target == null) throw new Error('找不到要改隐私标记的记录：' + kind + ' ' + idOrIndex);
+    this.db.prepare(`UPDATE ${def.table} SET is_private = ? WHERE rowid = ?`).run(isPrivate ? 1 : 0, target);
+    return { ok: true, kind, profileKey, id: idOrIndex, private: Boolean(isPrivate) };
+  }
+
+  /** 列出全部档案（含新建的，is_demo 标记随行）。 */
+  listProfiles() {
+    this.open();
+    return this.db.prepare('SELECT profile_key, name, meta, is_demo, created_on FROM subjects ORDER BY rowid').all();
+  }
+
   /** 供宿主 /health 用：只报事实，不报"是否已验证" */
   status() {
     return {
@@ -69,7 +201,7 @@ export class Workbench {
       homeDir: HOME_DIR,
       dbFile: DB_FILE,
       root: this.root,
-      capabilities: ['bootstrap', 'profile', 'health'],
+      capabilities: ['bootstrap', 'profile', 'health', 'write'],
       stats: this.stats,
       seeded: this.seeded ?? null,
       migrations: this.migrations ?? null,
