@@ -118,7 +118,7 @@ async function main() {
   })
   await page.evaluate(() => { window.__AHA_APP__.state.profileId = 'demo-a'; window.__AHA_APP__.render() })
   const back = await page.evaluate(() => ({ name: document.querySelector('#profile-name').textContent, id: window.__AHA_APP__.state.profileId }))
-  t('Q10', 'A→B→A 抽查不串档（出血条数与医生原话随档案切换）', before.name !== b.name && b.flaps > before.flaps && b.shown && back.id === 'demo-a', { A: before, B: { name: b.name, flaps: b.flaps }, back: back.name })
+  t('Q10', 'A→B→A 抽查不串档（出血条数与医生原话随档案切换）', before.name !== b.name && b.bleeds > before.bleeds && b.shown && back.id === 'demo-a', { A: before, B: { name: b.name, flaps: b.bleeds }, back: back.name })
 
   /* ---------- MT/C：指标卡 3D（records/metrics，B 档案） ---------- */
   await page.evaluate(() => {
