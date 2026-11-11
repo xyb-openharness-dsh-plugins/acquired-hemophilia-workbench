@@ -9,13 +9,15 @@
  * 用法：node scripts/check-ui-parity.mjs
  * 退出码：0 一致 / 1 不一致
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FILES, expected, OUT } from './migrate-public.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const BYTE_COPY = ['style.css', 'demo-data.js', 'primer-data.js', 'primer.js', 'primer.css', ];
+/* trial-match.js 只在保留试验线的仓存在（裁剪仓如实没有）；存在才逐字节比对。 */
+const BYTE_COPY = ['style.css', 'demo-data.js', 'primer-data.js', 'primer.js', 'primer.css'].concat(
+  existsSync(join(ROOT, 'prototypes/v0.2/trial-match.js')) ? ['trial-match.js'] : []);
 const problems = [];
 
 for (const f of BYTE_COPY) {

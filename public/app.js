@@ -31,7 +31,7 @@
     reports: [['list', '最近报告'], ['wall', '原件墙']],
     mind: [['feel', '当下感受'], ['family', '家庭与照护']],
     records: [['archive', '病情档案'], ['metrics', '指标检测'], ['summary', '病情汇总']],
-    clinical: [['notice', '裁剪说明']]
+    clinical: [['match', '匹配'], ['search', '检索'], ['saved', '收藏与跟踪']]
   }
   var SUBTITLES = {
     dash: '状态与最近变化都由你记录的事实算出；本台只回顾，不解读。',
@@ -42,7 +42,7 @@
     reports: '报告与原件的登记处；私密报告不进导出与 AI 上下文。',
     mind: '只记录感受与家人支持事项，不做情绪评分。',
     records: '档案总览；派生数字（如距上次出血天数）读时计算，不落任何判定。',
-    clinical: '本台如实裁剪临床试验线：获得性血友病患者数极少、多为急症期，检索通道对罕见出血病召回不可靠；这里只放裁剪说明，不假装有功能。'
+    clinical: '临床试验按「建档 → 检索 → 匹配 → 收藏」四段链路整理；登记状态一律未核实，本台不判断你是否适合任何试验。'
   }
   /* 设置（乳腺癌式弹层）：三 tab，顶栏「设置」打开 */
   var CFG_TABS = [['workspace', '工作区'], ['mineru', '文档解析（MinerU）'], ['clinic', '临床数据库']]
@@ -72,7 +72,11 @@
     flipped: {},
     agentOpen: false,
     sessions: {},
-    draft: {}
+    draft: {},
+    trialPref: { type: 'all' },
+    savedTrials: {},
+    rejectedTrials: {},
+    trialSearch: { kw: '', type: '' }
   }
 
   /* ---------- 小工具 ---------- */
@@ -176,7 +180,7 @@
     else if (page === 'reports') fact = '报告 ' + sharedOnly(p.reports).length + ' 份'
     else if (page === 'mind') fact = '感受记录 ' + sharedOnly(p.mind.feel).length + ' 条、家人记录 ' + sharedOnly(p.mind.family).length + ' 条'
     else if (page === 'records') fact = '档案字段 ' + Object.keys(p.profile).length + ' 项'
-    else if (page === 'clinical') fact = '临床试验线已如实裁剪（见裁剪说明页）'
+    else if (page === 'clinical') fact = '临床研究：候选池 ' + (DATA.trials || []).length + ' 条（含虚构示例）· 真实快照 ' + ((DATA.snapshotMeta || {}).count ?? 0) + ' 条（相关 ' + ((DATA.snapshotMeta || {}).relevant ?? 0) + '）'
     else if (page === 'dash') fact = '状态：' + (derivedStatus().mode)
     return '和 AI 讨论本页（' + esc(profile().name) + ' · ' + fact + '）：帮我梳理这一页上我能核对的事实，以及我还没问医生的问题。只整理事实，判断交给医生。'
   }
@@ -733,27 +737,130 @@
       '<p class="notice warn">本仓未接入 MinerU：本页的勾选与保存都不联网。</p></section>'
   }
   function setClinical() {
-    var snap = window.DEMO_DATA.snapshotMeta || { count: 0, date: null }
+    var snap = DATA.snapshotMeta || { count: 0, date: null, relevant: 0 }
     return '<section class="card"><h3>临床数据库</h3>' +
-      '<p>快照状态：<b>本台裁剪临床试验线（0 条）</b></p>' +
-      '<h3 style="margin-top:10px">裁剪声明（如实，不静默缺失）</h3>' +
-      '<p class="small-note">本台未接入临床试验快照：获得性血友病患者数极少、多为急症期，公开登记以病例登记研究为主，统一检索通道对罕见出血病召回不可靠；理由全文见 docs/DEV-REQUIREMENTS §三。若你的医生提到某项登记研究，直接把登记号告诉医生核对。</p>' +
-      '<p class="small-note">基础疾病（自身免疫病、恶性肿瘤等）的随访提醒属于档案页「确诊依据」范围，不在此处。</p>' +
-      '<div class="actions" style="margin-top:8px"><button class="soft" data-action="go" data-page="records">去看病情档案 →</button></div></section>'
+      '<p>快照状态：<b>' + esc(snap.count) + '</b> 条（' + esc(snap.date || '未知日期') + ' · unified-trial-mcp 四通道）；其中登记题目与本台疾病相关 <b>' + esc(snap.relevant ?? 0) + '</b> 条。</p>' +
+      '<h3 style="margin-top:10px">通道终态（如实，未查过不计覆盖）</h3>' +
+      '<ul>' + (snap.channels || []).map(function (c) {
+        return '<li><code>' + esc(c.id) + '</code>：' + esc(c.state) + ' —— ' + esc(c.note) + '</li>'
+      }).join('') + '</ul>' +
+      '<p class="small-note">相关 0 不代表「没有研究」：检索词命中才进池、通道召回有限；登记号请到官方登记页核对。与「临床研究」页同一份口径。</p>' +
+      '<div class="actions" style="margin-top:8px"><button class="soft" data-action="go" data-page="clinical">去临床研究页 →</button></div></section>'
   }
   function pageClinical() {
-    return head('临床试验（裁剪说明）', SUBTITLES.clinical, 'clinical') + subnav('clinical') + clinicalNotice()
+    var cur = subOf('clinical')
+    return head('临床研究', SUBTITLES.clinical, 'clinical') + subnav('clinical') + (cur === 'match' ? clinicalMatch() : cur === 'search' ? clinicalSearch() : clinicalSaved())
   }
-  function clinicalNotice() {
-    return '<section class="card"><h3>本台未接入临床试验匹配（如实裁剪）</h3>' +
+  function trialPool() { return DATA.trials || [] }
+  function trialFacts(tr) { return { id: tr.id, title: tr.title, studyType: tr.studyType } }
+  /* 匹配引擎（展示层，trial-match.js 纯函数）：判据只来自快照真实字段；靶点不进分母；可对照 <2 不给百分数 */
+  function matchTrials() {
+    var pref = state.trialPref
+    var list = trialPool().filter(function (t) { return !state.rejectedTrials[t.id] }).map(function (t) {
+      var facts = trialFacts(t)
+      var items = global.AhaTrialMatch.items(facts, pref)
+      var sc = global.AhaTrialMatch.score(items)
+      return { t: t, items: global.AhaTrialMatch.sorted(items), sc: sc }
+    })
+    list.sort(function (a, b) { return (b.sc.pct ?? -1) - (a.sc.pct ?? -1) })
+    return list
+  }
+  function clinicalPoolHead() {
+    var meta = DATA.snapshotMeta || { count: 0, date: null, relevant: 0 }
+    return '<div class="card"><h3>候选池口径（写在卡头，不是全库扫描）</h3>' +
       '<ul>' +
-      '<li>理由一：获得性血友病年发病率约百万分之一量级（指南原文口径，见疾病概要来源行），患者多在急症期，候选池口径会长期是「已载个位数」。</li>' +
-      '<li>理由二：统一检索通道对罕见出血病召回不可靠，「查不到」会被误读成「没有研究」。</li>' +
-      '<li>理由三：本台的凝血/抑制物字段与登记研究常见入排字段不对齐，硬凑会造出假符合度。</li>' +
-      '</ul>' +
-      '<p class="notice plain">如果你的医生提到某项临床研究：直接把登记号（如 NCT 编号）写给医生核对；本台不代你判断「能不能参加」。</p>' +
-      '<p class="small-note">设置 · 临床数据库 tab 有同一份裁剪声明与快照状态。若后续家族为获得性血友病建立可靠快照通道，这里会按 35 号四段链路补齐并升版本。</p>' +
-      '<div class="actions"><button class="primary" data-action="go" data-page="records">去看病情档案 →</button><button class="soft" data-action="go" data-page="labs">看指标与趋势 →</button></div></section>'
+      '<li>已载 <b>' + esc(trialPool().length) + '</b> 条（其中 ' + trialPool().filter(function (t) { return t.fictional }).length + ' 条为<b>虚构示例</b>，不含可用登记号，仅演示交互）。</li>' +
+      '<li>真实快照 <b>' + esc(meta.count) + '</b> 条（' + esc(meta.date) + ' · unified-trial-mcp 四通道）；其中登记题目与本台疾病相关的 <b>' + esc(meta.relevant) + '</b> 条。</li>' +
+      '<li>相关 ' + esc(meta.relevant) + ' 不代表「没有研究」——检索词命中才进池，且通道召回有限；你手里的登记号请到官方登记页核对。</li>' +
+      '<li>登记状态一律「登记状态，未核实」；快照会过期，以官方登记页为准。</li>' +
+      '</ul></div>'
+  }
+  function clinicalMatch() {
+    var p = profile()
+    var matches = matchTrials()
+    var out = '<div class="notice"><b>四段链路 ① 建档</b>：只有<b>已确认入库</b>的字段参与匹配；私密与待核对候选不参与。② 检索 →「检索」页。③ 匹配在本页。④ 收藏 →「收藏与跟踪」。</div>'
+    out += '<div class="card"><h3>档案字段（已确认入库，参与匹配）</h3><ul>' +
+      '<li>诊断方向：获得性血友病 A（以医生书面结论为准）</li>' +
+      '<li>确诊经过 / 进一步检查：' + esc((p.profile['确诊经过'] || '').slice(0, 30)) + '…（原文照录）</li>' +
+      '<li>抑制物滴度 / 凝血化验：见「凝血与滴度」（' + sharedOnly(p.labs).length + ' 条已入库）</li>' +
+      '<li>所在城市 / 年龄：<b>未登记</b>——匹配里这类项会标「待确认」，不会瞎猜</li>' +
+      '</ul><p class="small-note">这页给检索与匹配提供事实底座；不自动判断你是否符合任何试验条件。</p></div>'
+    out += '<div class="row" style="margin:10px 0"><span class="pill">偏好（只影响排序）</span>' +
+      '<button class="soft" data-action="tr-pref" data-k="all" aria-pressed="' + (state.trialPref.type === 'all') + '">全部</button>' +
+      '<button class="soft" data-action="tr-pref" data-k="interventional" aria-pressed="' + (state.trialPref.type === 'interventional') + '">干预类</button>' +
+      '<button class="soft" data-action="tr-pref" data-k="observational" aria-pressed="' + (state.trialPref.type === 'observational') + '">观察类</button></div>'
+    out += clinicalPoolHead()
+    out += '<div class="section-title"><h2>匹配候选（' + matches.length + '）</h2><p>「登记字段符合度」＝字段都对得上 / 部分对得上的计数，<b>不是入组资格</b>；百分数只在展示层算，不入库。</p></div>'
+    out += matches.length ? '<div class="grid two">' + matches.map(trialMatchCard).join('') + '</div>'
+      : '<div class="empty">候选池为空（你拒收了全部候选，或档案无数据）。<div class="actions" style="justify-content:center;margin-top:8px"><button data-action="tr-reset-reject">恢复被拒收候选</button></div></div>'
+    out += '<p class="notice plain">登记摘录 ≠ 推荐；入组条件请以官方登记页与医生意见为准（状态未核实）。</p>'
+    return out
+  }
+  function trialMatchCard(m) {
+    var t = m.t, items = m.items, sc = m.sc
+    var comparable = items.filter(function (i) { return i.state !== '?' }).length
+    var pending = items.filter(function (i) { return i.state === '?' }).length
+    var scoreHtml = sc.pct == null
+      ? '<div class="score-box alt"><span class="k">不足 2 项可对照</span><small>不给符合度</small></div>'
+      : '<div class="score-box"><b>' + esc(sc.pct) + '%</b><small>登记字段符合度</small></div>'
+    var head = '<div class="card trial-card"><div class="card-head"><h3>' + esc(t.title) + '</h3>' + (t.fictional ? '<span class="pill">虚构示例</span>' : '') + '</div>' +
+      '<p class="small-note">' + esc(t.id || '（示例条目）') + ' · ' + esc(t.studyType || '类型未存') + ' · ' + esc(t.statusNote || '登记状态，未核实') + '</p>'
+    var nm = '<div class="trial-nm">' + scoreHtml + '<div class="nm-line"><b>' + esc(sc.pct == null ? '—' : sc.ok + ' / ' + comparable) + '</b> 项对得上 · <b>' + esc(pending) + '</b> 项待确认' + (sc.reason ? '<div class="small-note">' + esc(sc.reason) + '</div>' : '') + '</div></div>'
+    var ev = '<details class="trial-ev" open><summary>逐条证据链（✕ / ? 排前）</summary><ul>' +
+      items.map(function (i) {
+        return '<li><span class="pill ' + (i.state === '✓' ? 'ok' : i.state === '✕' ? 'private' : 'warn') + '">' + i.state + '</span> <b>' + esc(i.label) + '</b>' + (i.hard ? ' <span class="pill">硬性</span>' : '') +
+          '<div class="small-note">记录里是：' + esc(i.got) + ' · 条件要求：' + esc(i.req) + '</div></li>'
+      }).join('') + '</ul></details>'
+    var acts = '<div class="actions"><button class="primary" data-action="tr-save" data-id="' + esc(t.id) + '">收藏为线索</button>' +
+      '<button data-action="tr-reject" data-id="' + esc(t.id) + '">拒收（零副作用）</button>' +
+      (t.sourceUrl ? '<a class="soft" href="' + esc(t.sourceUrl) + '" target="_blank" rel="noopener">官方登记页 ↗</a>' : '<span class="small-note">示例条目无官方出口</span>') + '</div>'
+    return head + nm + ev + acts + '</div>'
+  }
+  function clinicalSearch() {
+    var st = state.trialSearch
+    var out = '<div class="notice"><b>四段链路 ② 检索</b>：我要找某个药 / 编号 / 方向——按你选的条件排，<b>不掺分数</b>。示例条目为虚构（不含可用登记号）；真实快照见下方抽样与候选池口径。</div>'
+    out += '<div class="card"><div class="form-grid">' +
+      '<label class="full">关键词（药名 / 编号 / 方向）<input type="search" data-draft="trialSearch.kw" value="' + esc(st.kw) + '" placeholder="如：利妥昔单抗、NCT 编号、免疫抑制"></label>' +
+      '<label>研究类型<select data-draft="trialSearch.type">' + ['全部', '干预', '观察'].map(function (k) { return '<option' + (st.type === k ? ' selected' : '') + '>' + k + '</option>' }).join('') + '</select></label>' +
+      '</div><div class="actions"><button class="primary" data-action="tr-search-run">检索</button><span class="small-note">检索不产生匹配分数，只按条件过滤。</span></div></div>'
+    var kw = st.kw.trim().toLowerCase()
+    var rows = trialPool().filter(function (t) {
+      if (kw && (t.title + ' ' + (t.id || '')).toLowerCase().indexOf(kw) < 0) return false
+      var typeRe = st.type === '干预' ? /干预|intervention/i : st.type === '观察' ? /观察|observ/i : null
+      if (typeRe && !typeRe.test(String(t.studyType || ''))) return false
+      return true
+    })
+    out += '<div id="tr-search-out">' + (rows.length
+      ? '<div class="table-wrap"><table><thead><tr><th>登记号</th><th>研究</th><th>类型</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+        rows.map(function (t) {
+          return '<tr><td>' + esc(t.id || '—') + '</td><td>' + esc(t.title) + '</td><td>' + esc(t.studyType || '未存') + '</td><td>' + esc(t.statusNote || '登记状态，未核实') + '</td>' +
+            '<td><button class="linkish" data-action="tr-save" data-id="' + esc(t.id) + '">收藏</button></td></tr>'
+        }).join('') + '</tbody></table></div><p class="scroll-hint">← 左右滑动查看 →</p>'
+      : '<div class="empty">没有命中候选池里的条目。<div class="actions" style="justify-content:center;margin-top:8px"><button data-action="go" data-page="clinical">清空条件重试 →</button></div></div>') + '</div>'
+    out += '<div class="section-title"><h2>真实快照抽样（与本病相关 0 条，仅展示数据形态）</h2><p>完整快照 205 条在开发版由服务层透传；此处抽样 4 条均为其他领域研究，如实展示「相关 0」的含义。</p></div>'
+    out += '<div class="table-wrap"><table><thead><tr><th>来源</th><th>登记题目</th><th>与本台疾病相关</th></tr></thead><tbody>' +
+      (DATA.realSample || []).map(function (r) {
+        return '<tr><td>' + esc(r.sourceId) + '</td><td>' + esc(r.title) + '</td><td><span class="pill private">✕</span></td></tr>'
+      }).join('') + '</tbody></table></div><p class="scroll-hint">← 左右滑动查看 →</p>'
+    return out
+  }
+  function clinicalSaved() {
+    var keys = Object.keys(state.savedTrials)
+    var out = '<div class="notice"><b>四段链路 ④ 收藏与跟踪</b>：只存本机 {试验, 收藏日期, 状态}；快照没有登记状态变化时间线——<b>没有就是没有，不画假进度条</b>。</div>'
+    if (!keys.length) {
+      out += '<div class="empty">还没有收藏。<div class="actions" style="justify-content:center;margin-top:8px"><button data-action="go" data-page="clinical">去匹配页收藏 →</button></div></div>'
+    } else {
+      out += '<div class="table-wrap"><table><thead><tr><th>研究</th><th>收藏日期</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+        keys.map(function (k) {
+          var it = state.savedTrials[k]
+          return '<tr><td>' + esc(it.title) + '</td><td>' + esc(it.savedOn) + '</td><td>' + esc(it.stateLabel) + '</td>' +
+            '<td>' + ['tracking', 'toAsk', 'archived'].map(function (st2) {
+              return '<button class="soft" data-action="tr-state" data-k="' + esc(k) + '" data-st="' + st2 + '"' + (it.state === st2 ? ' disabled' : '') + '>' + ({ tracking: '在跟', toAsk: '准备问', archived: '已归档' }[st2]) + '</button>'
+            }).join(' ') + '</td></tr>'
+        }).join('') + '</tbody></table></div>'
+    }
+    out += '<p class="notice plain">登记摘录 ≠ 推荐；入组条件请以官方登记页与医生意见为准（状态未核实；快照会过期）。</p>'
+    return out
   }
 
   function navIcons(key) {
@@ -1058,6 +1165,27 @@
     else if (act === 'pv-export') { openPvLayer('导出预览（私密过滤后）', exportPreviewHtml(), false, btn) }
     else if (act === 'pv-report') { openPvLayer('报告详情', reportDetailHtml(btn.getAttribute('data-id')), false, btn) }
     else if (act === 'pv-labs') { openPvLayer('化验记录', labsLayerHtml(), false, btn) }
+    else if (act === 'tr-pref') { state.trialPref.type = btn.getAttribute('data-k'); render() }
+    else if (act === 'tr-save') {
+      var t = (DATA.trials || []).find(function (z) { return z.id === btn.getAttribute('data-id') })
+      if (t && !state.savedTrials[t.id]) {
+        state.savedTrials[t.id] = { title: t.title, savedOn: TODAY, state: 'tracking', stateLabel: '在跟' }
+        toast('已收藏为线索（只存本机演示态）；状态可改为 在跟 / 准备问 / 已归档')
+      } else if (t) { toast('这条已在收藏里') }
+      render()
+    }
+    else if (act === 'tr-reject') {
+      state.rejectedTrials[btn.getAttribute('data-id')] = true
+      render(); toast('已拒收（零副作用：只从本页候选里隐藏，不写任何数据）')
+    }
+    else if (act === 'tr-reset-reject') { state.rejectedTrials = {}; render() }
+    else if (act === 'tr-search-run') { render() }
+    else if (act === 'tr-state') {
+      var k = btn.getAttribute('data-k'), stv = btn.getAttribute('data-st')
+      var it = state.savedTrials[k]
+      if (it) { it.state = stv; it.stateLabel = { tracking: '在跟', toAsk: '准备问', archived: '已归档' }[stv] }
+      render()
+    }
   })
   function sharedIndex(list, shownIndex) {
     var shared = list.filter(function (z) { return !z.private })
@@ -1234,7 +1362,9 @@ const ROUTES = {
   'records/archive': pageRecords,
   'records/metrics': pageRecords,
   'records/summary': pageRecords,
-  'clinical/notice': pageClinical,
+  'clinical/match': pageClinical,
+  'clinical/search': pageClinical,
+  'clinical/saved': pageClinical,
 };
 
 

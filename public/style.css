@@ -271,3 +271,15 @@ html.pv-lock { overflow: hidden; }
 .trial-detail .pv-head { border-bottom: 1px solid var(--line); }
 .trial-detail .pv-body { flex: 1; overflow: auto; padding: 14px; }
 @media (max-width: 900px) { .trial-detail { width: 100%; } }
+
+/* —— 35 号试验线（匹配卡/检索/收藏）—— */
+.trial-card { display: flex; flex-direction: column; gap: 8px; }
+.trial-card .card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.trial-nm { display: flex; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.score-box { min-width: 88px; text-align: center; background: var(--brand-soft); border-radius: 10px; padding: 8px 10px; }
+.score-box b { font-size: 26px; color: var(--brand-deep); font-variant-numeric: tabular-nums; }
+.score-box small, .score-box .k { display: block; color: var(--muted); font-size: 11.5px; }
+.score-box.alt { background: var(--paper); border: 1px dashed var(--line-strong); }
+.nm-line b { font-variant-numeric: tabular-nums; }
+.trial-ev ul { margin: 6px 0 0; padding-left: 18px; }
+.trial-ev li { margin: 6px 0; }

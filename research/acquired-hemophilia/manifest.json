@@ -1,0 +1,41 @@
+{
+  "topic": "acquired-hemophilia",
+  "year": "2026",
+  "snapshotDate": "2026-11-12",
+  "tool": "unified-trial-mcp @ /Users/qinxiaoqiang/Downloads/unified_search_trials/dist/src/cli/main.js",
+  "queries": [
+    {
+      "keyword": "acquired hemophilia A",
+      "note": "英文标准名"
+    },
+    {
+      "keyword": "acquired hemophilia",
+      "note": "宽检索上位词（去重靠登记号）"
+    },
+    {
+      "keyword": "获得性血友病",
+      "note": "中文标准名"
+    },
+    {
+      "keyword": "factor VIII inhibitor",
+      "note": "FⅧ抑制物扩展检索（本病核心病理词）"
+    }
+  ],
+  "perSourceLimit": 200,
+  "recordCount": 205,
+  "dbCount": 205,
+  "sourceStatusRows": 24,
+  "honesty": {
+    "offlineCorpora": "ChiCTR/CDE/CTV 离线语料仅胰腺癌覆盖；获得性血友病只依赖在线通道终态，见 source_statuses 表",
+    "statusWording": "登记 ≠ 有效 ≠ 安全 ≠ 可入组；状态一律\"登记状态，未核实\"",
+    "mergeRule": "仅同一登记号（NCT/ChiCTR/CDE 等）合并，其余并排保留来源"
+  },
+  "files": {
+    "trials-2026.jsonl": {
+      "sha256": "1218873bc98b2cc059f34a44ebcacbaec5448caeaf72e6b0ae0b5cbc7be70c0c"
+    },
+    "acquired_hemophilia_trials_2026.sqlite": {
+      "sha256": "0a3318a3c79cc3779adbc49abbe59adef0aa9a91b227519552b839c6cc0583c9"
+    }
+  }
+}

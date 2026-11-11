@@ -21,8 +21,30 @@ window.DEMO_DATA = {
     { key: 'hemogram', title: '血象', items: ['Hb', 'WBC', 'PLT'] },
     { key: 'vitals', title: '体征', items: ['体重'] }
   ],
-  /* 临床数据库 tab 与裁剪声明同口径：本台裁剪试验线，快照 0 条 */
-  snapshotMeta: { count: 0, date: null },
+  /* 临床数据库（35 号四段链路 · M4 真实快照 2026-11-12，unified-trial-mcp 四通道）
+   * 通道终态如实：chinadrugtrials SUCCESS 200 条（与本病无关）、ctv SUCCESS 5 条（与本病无关），
+   * ictrp TIMEOUT/FAILED ×3、chictr_online FAILED（未查过不计覆盖）。
+   * 题目与本台疾病相关的 0 / 205 ——「相关 0」不等于「没有研究」，以官方登记页为准。
+   * trials = 2 条虚构示例（不含可用登记号，仅演示匹配/收藏交互）；realSample = 真实快照抽样。 */
+  snapshotMeta: {
+    count: 205, date: '2026-11-12', relevant: 0,
+    channels: [
+      { id: 'chinadrugtrials', state: 'SUCCESS', note: '返回 200 条，登记题目均与本台疾病无关' },
+      { id: 'ctv', state: 'SUCCESS', note: '返回 5 条，与本台疾病无关；「acquired hemophilia」关键词 NO_RESULTS' },
+      { id: 'ictrp', state: 'TIMEOUT/FAILED', note: '三次查询超时/失败，未查过不计覆盖' },
+      { id: 'chictr_online', state: 'FAILED', note: '失败，未查过不计覆盖' }
+    ]
+  },
+  trials: [
+    { id: '示例-NCT-1', fictional: true, title: '获得性血友病免疫抑制治疗登记研究（示例条目，虚构）', studyType: '观察性研究', sponsors: ['示例申办方（虚构）'], statusNote: '登记状态，未核实', sourceUrl: '', snapshotDate: '示例' },
+    { id: '示例-NCT-2', fictional: true, title: 'Ⅷ因子抑制物清除干预研究（示例条目，虚构）', studyType: '干预性研究', sponsors: ['示例申办方（虚构）'], statusNote: '登记状态，未核实', sourceUrl: '', snapshotDate: '示例' }
+  ],
+  realSample: [
+    { sourceId: 'chinadrugtrials', title: '艾托格列净片人体生物等效性研究（预试验）' },
+    { sourceId: 'chinadrugtrials', title: '评估EB070注射液在成年中重度哮喘患者中的多次给药剂量递增Ib 期临床研究' },
+    { sourceId: 'chinadrugtrials', title: '注射用HS-20093联合治疗晚期非小细胞肺癌参与者的Ⅰ期临床研究' },
+    { sourceId: 'ctv', title: 'Randomized Phase 2 Study of Iberdomide Maintenance Therapy…' }
+  ],
   profiles: [
     {
       id: 'demo-a',

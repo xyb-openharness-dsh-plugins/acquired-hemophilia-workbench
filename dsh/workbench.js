@@ -107,6 +107,7 @@ export class Workbench {
     const rows = kw
       ? rdb.prepare('SELECT * FROM trials WHERE title LIKE ? ORDER BY rowid LIMIT 50').all('%' + kw + '%')
       : rdb.prepare('SELECT * FROM trials ORDER BY rowid LIMIT 50').all();
+    const totalAll = rdb.prepare('SELECT COUNT(*) AS n FROM trials').get().n
     const out = rows.map((r) => ({
       recordId: r.record_id, title: r.title, studyType: r.study_type,
       sponsors: r.sponsors ? JSON.parse(r.sponsors) : null,
@@ -114,7 +115,10 @@ export class Workbench {
       sourceUrl: r.source_url, statusNote: r.status_note, snapshotDate: r.snapshot_date,
     }));
     rdb.close();
-    return { available: true, snapshotDate: out[0]?.snapshotDate ?? null, total: out.length, records: out };
+    /* 诚实口径（35 号）：本通道只做关键词过滤与登记字段透传，不做符合度判读；
+       条目无法结构化，需人工核对；登记状态未核实，快照会过期。 */
+    return { available: true, snapshotDate: out[0]?.snapshotDate ?? null, total: totalAll, records: out,
+      honestyNote: '条目无法结构化，需人工核对；登记状态未核实，快照会过期，以官方登记页为准' };
   }
 }
 

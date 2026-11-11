@@ -19,7 +19,7 @@ const PORT = Number(argOf('--port') || 8137)
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json' }
 
 /* 全量叶子路由（与 app.js 顶层 ROUTES 一一对应；漏一条 check-probe-coverage 就会红） */
-const LEAF_ROUTES = ['dash', 'events/list', 'events/timeline', 'labs/list', 'labs/chart', 'treatment/log', 'treatment/meds', 'visits/prep', 'visits/hospitals', 'reports/list', 'reports/wall', 'mind/feel', 'mind/family', 'records/archive', 'records/metrics', 'records/summary', 'clinical/notice']
+const LEAF_ROUTES = ['dash', 'events/list', 'events/timeline', 'labs/list', 'labs/chart', 'treatment/log', 'treatment/meds', 'visits/prep', 'visits/hospitals', 'reports/list', 'reports/wall', 'mind/feel', 'mind/family', 'records/archive', 'records/metrics', 'records/summary', 'clinical/match', 'clinical/search', 'clinical/saved']
 
 function findChrome() {
   if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH
@@ -302,14 +302,59 @@ async function main() {
   const clip = await page.evaluate(() => {
     const txt = document.querySelector('#main').innerText
     return {
-      stated: txt.includes('如实裁剪'),
-      reason: txt.includes('登记研究'),
-      next: !!document.querySelector('#main [data-action="go"]'),
-      noFakeSearch: !document.querySelector('#trial-kw'),
-      noScore: !txt.includes('登记字段符合度')
+      chain: txt.includes('四段链路'),
+      unverified: txt.includes('未核实'),
+      honestZero: txt.includes('不代表「没有研究」'),
+      next: !!document.querySelector('#main [data-action]'),
+      noFakeScore: !txt.includes('匹配指数') && !txt.includes('入选概率')
     }
   })
-  t('CLIN0', '临床页裁剪说明：明示裁剪理由 + 下一步按钮 + 无假检索/假分数', clip.stated && clip.next && clip.noFakeSearch && clip.noScore, clip)
+  t('CLIN0', '临床研究页四段链路 + 未核实口径 + 相关 0 诚实声明 + 禁词 0', clip.chain && clip.unverified && clip.honestZero && clip.next && clip.noFakeScore, clip)
+  /* ---------- 35 号试验线：候选池口径 / 匹配卡 / 证据链 / 收藏与拒收 / 检索无分数 ---------- */
+  await page.evaluate(() => { const a = window.__AHA_APP__; a.state.trialPref.type = 'interventional'; a.state.page = 'clinical'; a.state.sub.clinical = 'match'; a.render() })
+  const trial = await page.evaluate(() => {
+    const txt = document.querySelector('#main').innerText
+    const card = document.querySelector('.trial-card')
+    const score = card && card.querySelector('.score-box b')
+    const nm = card && card.querySelector('.nm-line')
+    const evStates = card ? [...card.querySelectorAll('.trial-ev li .pill')].map(x => x.textContent.trim()) : []
+    return {
+      poolHead: txt.includes('不是全库扫描') && txt.includes('快照 205'),
+      honest0: txt.includes('相关') && txt.includes('0') && txt.includes('不代表「没有研究」'),
+      fictional: txt.includes('虚构示例'),
+      scoreText: score ? score.textContent : '',
+      nmText: nm ? nm.textContent.trim() : '',
+      evStates: evStates.join(''),
+      evFirst: evStates[0],
+      evidence: card ? card.innerText.includes('记录里是：') && card.innerText.includes('条件要求：') : false,
+      disclaimer: card ? card.innerText.includes('不是入组资格') || document.querySelector('#main').innerText.includes('不是入组资格') : false
+    }
+  })
+  t('TR1', '候选池口径卡头（已载/快照 205/不是全库扫描/相关 0 不代表没有研究/虚构示例明示）', trial.poolHead && trial.honest0 && trial.fictional, { poolHead: trial.poolHead, honest0: trial.honest0 })
+  t('TR2', '匹配卡分数方块 + 「n / m 项对得上 · k 项待确认」', /\d+%/.test(trial.scoreText) && /\d+ \/ \d+.*项对得上/.test(trial.nmText) && trial.nmText.includes('项待确认'), { score: trial.scoreText, nm: trial.nmText })
+  t('TR3', '逐条证据链三态且 ✕/? 排前，带「记录里是/条件要求」', trial.evidence && (trial.evFirst === '✕' || trial.evFirst === '?') && trial.evStates.includes('✓'), { states: trial.evStates })
+  t('TR4', '匹配卡带「不是入组资格」声明', trial.disclaimer, {})
+  const pure = await page.evaluate(() => {
+    const M = window.AhaTrialMatch
+    const good = M.items({ title: 'Acquired hemophilia A registry study', studyType: 'Observational' }, { type: 'observational' })
+    const g1 = M.score(good)
+    const bad = M.items({ title: 'Diabetes bioequivalence study', studyType: 'Interventional' }, { type: 'interventional' })
+    const b1 = M.score(bad)
+    const few = M.items({ title: 'x', studyType: '' }, { type: 'all' })
+    const f1 = M.score(few)
+    return { g: g1, b: b1, f: f1, sig: M.items.length === 2, sortedFirst: M.sorted(bad)[0].state }
+  })
+  t('TR5', '纯函数：相关→给分，不相关→硬性✕ 诚实低分，可对照<2 不给百分数，签名不收靶点', pure.g.pct > 0 && pure.b.pct < pure.g.pct && pure.f.pct == null && pure.sig && pure.sortedFirst === '✕', pure)
+  await page.evaluate(() => { const a = window.__AHA_APP__; document.querySelector('[data-action="tr-save"]').click() })
+  await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'clinical'; a.state.sub.clinical = 'saved'; a.render() })
+  const saved1 = await page.evaluate(() => ({ rows: document.querySelectorAll('#main tbody tr').length, noFake: !document.querySelector('#main').innerText.includes('进度') || document.querySelector('#main').innerText.includes('不画假进度条') }))
+  await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'clinical'; a.state.sub.clinical = 'match'; a.render(); document.querySelector('[data-action="tr-reject"]').click() })
+  const afterReject = await page.evaluate(() => ({ cards: document.querySelectorAll('.trial-card').length, savedKept: Object.keys(window.__AHA_APP__.state.savedTrials).length }))
+  t('TR6', '收藏落本机表且无假进度条；拒收零副作用（卡片-1、收藏不受影响、可恢复）', saved1.rows >= 1 && saved1.noFake && afterReject.cards === 1 && afterReject.savedKept === 1, { saved1, afterReject })
+  await page.evaluate(() => { const a = window.__AHA_APP__; a.state.sub.clinical = 'search'; a.render() })
+  const searchPct = await page.evaluate(() => ({ pct: document.querySelector('#tr-search-out') ? document.querySelector('#tr-search-out').innerText.includes('%') : false, honestEmpty: document.querySelector('#main').innerText.includes('按条件过滤') }))
+  t('TR7', '检索页不出现百分数（无分数排序）+ 明示「不掺分数」', !searchPct.pct && searchPct.honestEmpty, searchPct)
+  await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'dash'; a.render() })
   await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'dash'; a.render() })
   await page.evaluate(() => { const a = window.__AHA_APP__; a.state.page = 'dash'; a.render() })
   const tiles = await page.evaluate(() => ({ tiles: document.querySelectorAll('.stat-tile').length, groups: window.__AHA_APP__ ? (window.__AHA_APP__.DATA.metricDefs||[]).length : 0 }))

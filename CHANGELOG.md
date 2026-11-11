@@ -1,3 +1,12 @@
+## 0.2.0 — 2026-11-12（试验线补齐：M4 真实快照 + 35 号四段链路）
+
+- M4 临床库：`scripts/fetch-acquired-hemophilia-trials-2026.mjs`（unified-trial-mcp 四在线通道）→ `research/acquired-hemophilia/` 四件套（manifest/jsonl/sqlite/README），快照 205 条、通道终态如实入 manifest 与界面（ictrp TIMEOUT/FAILED×3、chictr_online FAILED 未查过不计覆盖）。
+- 试验线（35 号四段链路）：「临床研究」页三子页（匹配/检索/收藏与跟踪）；匹配卡=分数方块 + 「n / m 项对得上 · k 项待确认」+ 逐条三态证据链（✕/? 排前，带「记录里是/条件要求」）；判据只来自快照真实字段，靶点不进分母，可对照<2 不给百分数；`trial-match.js` 纯函数（签名不收靶点）+ `check-trial-matching.mjs` 入 check 链。
+- 诚实空相关：真实快照 205 条中登记题目与本台疾病相关 **0** 条（「相关 0」≠「没有研究」）；候选池=2 条虚构示例（明示不含可用登记号）演示交互 + 真实快照抽样展示；检索页不掺分数；收藏只存本机 {试验,日期,状态}，无假进度条；拒收零副作用可恢复。
+- 设置·临床数据库 tab 与临床研究页同口径联动（快照条数/相关 0/通道终态逐通道展示）。
+- 服务层：`Workbench.trialMatch` 透传快照（total=205 与 manifest 对账）+ 诚实口径字段；`test/trial-line.test.mjs` 锁死纯函数红线与快照透传形状。
+- 用户可见结果：可以按「建档→检索→匹配→收藏」走完试验线全程；快照里没有本病相关登记这件事在界面如实可见，不再被裁剪声明挡住。
+
 # 变更记录
 
 只增不删；每条写清"改了什么 + 为什么 + 用户可见结果"。版本号与 VERSION、package.json 三处必须一致。
