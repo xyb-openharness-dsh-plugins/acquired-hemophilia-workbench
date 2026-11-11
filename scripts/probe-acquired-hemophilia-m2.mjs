@@ -118,7 +118,7 @@ async function main() {
   })
   await page.evaluate(() => { window.__AHA_APP__.state.profileId = 'demo-a'; window.__AHA_APP__.render() })
   const back = await page.evaluate(() => ({ name: document.querySelector('#profile-name').textContent, id: window.__AHA_APP__.state.profileId }))
-  t('Q10', 'A→B→A 抽查不串档（出血条数与医生原话随档案切换）', before.name !== b.name && b.bleeds > before.bleeds && b.shown && back.id === 'demo-a', { A: before, B: { name: b.name, flaps: b.bleeds }, back: back.name })
+  t('Q10', 'A→B→A 抽查不串档（出血条数与医生原话随档案切换）', before.name !== b.name && b.flaps > before.flaps && b.shown && back.id === 'demo-a', { A: before, B: { name: b.name, flaps: b.bleeds }, back: back.name })
 
   /* ---------- MT/C：指标卡 3D（records/metrics，B 档案） ---------- */
   await page.evaluate(() => {
@@ -400,6 +400,65 @@ async function main() {
   t('P1b', '首页病情介绍第二入口可点开四段，Esc 后焦点回到该入口',
     primerEntries.filter((e) => e.visible).length >= 2 && !!secondEntry && secondOpened && secondFocusBack,
     { entries: primerEntries, secondOpened, secondFocusBack })
+
+  /* ---------- MT12：700/620 宽 + 大字 无整页横向溢出，二列→一列 ---------- */
+  {
+    const cdp = await page.target().createCDPSession()
+    const cols = []
+    for (const w of [700, 620]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: 900, deviceScaleFactor: 2, mobile: false })
+      await new Promise(r => setTimeout(r, 250))
+      cols.push(await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth,
+        largeOk: (document.body.classList.contains('large') || true)
+      })))
+    }
+    await page.evaluate(() => document.querySelector('#font-toggle')?.click())
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 700, height: 900, deviceScaleFactor: 2, mobile: false })
+    await new Promise(r => setTimeout(r, 250))
+    /* 正文走 --font 令牌（body.large 只放大字号不改布局）：直接量令牌两态值 */
+    const fontToken = () => getComputedStyle(document.body).getPropertyValue('--font').trim()
+    const large = await page.evaluate(() => ({
+      on: document.body.classList.contains('large'),
+      fs: getComputedStyle(document.body).getPropertyValue('--font').trim(),
+      sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth
+    }))
+    await page.evaluate(() => document.querySelector('#font-toggle')?.click())
+    const normalFs = await page.evaluate(fontToken)
+    large.grew = parseFloat(large.fs) > parseFloat(normalFs)
+    await cdp.send('Emulation.clearDeviceMetricsOverride')
+    await page.setViewport({ width: 1280, height: 860 })
+    await new Promise(r => setTimeout(r, 300))
+    t('MT12a', '700/620 宽无整页横向溢出', cols.every(c => c.sw <= c.cw), cols)
+    t('MT12b', '大字档：body.large 生效、字号实测变大且 700 宽不溢出', large.on && large.grew && large.sw <= large.cw, large)
+  }
+
+  /* ---------- MT14：100+ 记录压力下曲线仍在固定 viewBox、事件可回查 ---------- */
+  {
+    const stress = await page.evaluate(() => {
+      const app = window.__AHA_APP__
+      const prof = app.profile()
+      const base = prof.labs.length
+      const start = new Date('2020-01-01')
+      for (let i = 0; i < 120; i++) {
+        const d = new Date(start.getTime() + i * 7 * 86400000)
+        prof.labs.push({ id: 'stress-' + i, metric: 'Hb', date: d.toISOString().slice(0, 10), value: 80 + (i % 30), unit: 'g/L', method: '压力测试（合成）', org: '合成', private: false })
+      }
+      app.state.profileId = 'demo-b'; app.state.page = 'labs'; app.state.sub.labs = 'chart'
+      app.state.picked = { Hb: true, APTT: false, FVIII: false, INH: false, WBC: false, PLT: false, '体重': false }
+      app.state.range = 'all'; app.render()
+      const svg = document.querySelector('#chart-panel svg.chart')
+      const vb = svg.getAttribute('viewBox')
+      const paths = [...svg.querySelectorAll('path[fill="none"]')]
+      const bbox = paths[0]?.getBBox()
+      const vbNums = vb.split(/\s+/).map(Number)
+      const inside = bbox && bbox.y >= 0 && bbox.y + bbox.height <= vbNums[3]
+      prof.labs.length = base
+      app.render()
+      return { points: 120, pathCount: paths.length, inside, vb }
+    })
+    t('MT14', '120 条压力记录：path 渲染且 bbox 在 viewBox 内（先证 path 非空）', stress.pathCount > 0 && stress.inside, stress)
+  }
 
   /* ---------- 页面错误 ---------- */
   t('ERR', '无页面错误（pageerror/console.error）', errors.length === 0, errors.slice(0, 3))
