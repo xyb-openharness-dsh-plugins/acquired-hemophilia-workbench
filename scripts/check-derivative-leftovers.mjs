@@ -53,6 +53,13 @@ export const LEFTOVER_PATTERNS = [
   [/小浆宝/, '骨髓瘤工作台品牌名（中文）'],
   [/\bAnalPal\b/, '肛管癌工作台品牌名'],
   [/小萌宝/, '肛管癌工作台品牌名（中文）'],
+  [/\bWarmPal\b/, '冷凝集素工作台品牌名'],
+  [/小暖宝/, '冷凝集素工作台品牌名（中文）'],
+  [/\bcold-agglutinin\b/, '冷凝集素工作台仓库名'],
+  [/冷凝集素/, '冷凝集素病种词（中文）'],
+  [/\bHealPal\b/, '天疱疮工作台品牌名'],
+  [/小愈宝/, '天疱疮工作台品牌名（中文）'],
+  [/天疱疮/, '天疱疮病种词（中文）'],
 ]
 
 const SCAN_DIRS = ['dsh', 'lib', 'public', 'src', 'demo', 'scripts', 'test', 'prototypes']

@@ -2,7 +2,7 @@
 /**
  * check-agent-pane-contract.mjs — DSH 原生 AI 对话面板的**静态**契约断言。
  *
- * 来源：2026-11 小暖宝（cold-agglutinin-workbench）实机激活失败一轮 + 2026-11-10 用户点名复核。
+ * 来源：2026-11 小暖宝（cold-agglutinin-workbench）实机激活失败一轮 + 2026-11-10 用户点名复核。 leftover-allow: 检查器出处注记
  * 现场：customFrame 下宿主即使没有会话也会传一个隐藏的 conversation 容器，用它判断
  *      「有没有会话」必然误判；再用 ensureSession({}) 兜底，点击后既没面板也没反馈。
  *      这类错不报错、能打包、能装机，只在用户点「AI 对话」时表现为"点了没反应"。
@@ -88,7 +88,7 @@ export function inspect(source, { hasGenerated = true, generatedSource = null } 
   /* 7 生成物同步（只在有 lib/client.js 时判；自测用参数注入）
      构建器会先声明 `const __PANEL_LAYOUT__ = {...}`，再在渲染/注册代码里引用它。
      声明名与对它的引用都不是漏替换；真正要抓的是**从未被声明**的 __XXX__。
-     2026-11-10 cold-agglutinin 实测：只按“声明行”豁免仍会把引用判红，必须按名字收集。 */
+     2026-11-10 cold-agglutinin 实测：只按“声明行”豁免仍会把引用判红，必须按名字收集。 leftover-allow: 检查器出处注记 */
   if (hasGenerated) {
     const gen = generatedSource ?? ''
     const declared = new Set()
