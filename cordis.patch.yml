@@ -1,0 +1,7 @@
+- insert:
+    - id: acquired-hemophilia-main
+      name: "@xyb-community/acquired-hemophilia-workbench"
+      # 接线前置：宿主把业务资料根目录指向 dshHomePath('acquired-hemophilia')；
+      # 配置了 config.root 不等于宿主已声明/读取该目录，装机时按 V2 四要素复核。
+      config:
+        root: !!js dshHomePath('acquired-hemophilia')
