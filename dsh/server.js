@@ -8,7 +8,7 @@
  *   - 本文件不碰 AI、不存会话：会话由宿主管理。
  */
 import { readFileSync, existsSync, realpathSync, statSync } from 'node:fs';
-import { extname, join, normalize, relative, resolve, sep } from 'node:path';
+import { extname, join, normalize, relative, resolve, sep , isAbsolute } from 'node:path';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -94,6 +94,23 @@ async function readBody(req, res, sendJson) {
   }
 }
 
+/**
+ * 资料目录口径（与面板同一条规则，服务端再判一遍）：
+ * 主目录本身、桌面、下载根目录、tmp 一律拒绝。拒绝必须给**人话理由**——
+ * 静默接受比报错更危险（用户以为数据在那儿，其实不在）。
+ */
+export function checkDataDir(raw) {
+  const dir = String(raw || '').trim();
+  if (!dir) return { ok: false, reason: '目录为空' };
+  if (!isAbsolute(dir)) return { ok: false, reason: '请选择绝对路径' };
+  const homeExact = /^(\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)$/i;
+  if (homeExact.test(dir)) return { ok: false, reason: '主目录本身不作为资料目录，请在下面建一个专用文件夹' };
+  if (/(Desktop|桌面)$/i.test(dir)) return { ok: false, reason: '桌面不作为资料目录' };
+  if (/(Downloads?|下载(夹)?)$/i.test(dir)) return { ok: false, reason: '下载根目录不作为资料目录' };
+  if (/^(\/tmp|\/private\/tmp|\/var\/folders\/|\/private\/var\/folders\/)/i.test(dir)) return { ok: false, reason: 'tmp 不作为资料目录（会被系统清理）' };
+  return { ok: true, dir };
+}
+
 export function createHandler({ apiBase = '', publicDir, services }) {
   const sendJson = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -143,6 +160,19 @@ export function createHandler({ apiBase = '', publicDir, services }) {
       const body = await readBody(req, res, sendJson); if (body === null) return;
       try { return sendJson(res, 200, services.setPrivacy(body || {})); }
       catch (error) { return sendJson(res, 400, { error: 'setPrivacy failed', detail: String(error.message || error) }); }
+    }
+    /* ---------- 资料目录：选择 / 读取（真入口，不是说明弹窗；口径服务端再判一遍） ---------- */
+    if (pathname === apiPrefix + '/root' && services.dataRoot !== undefined) {
+      try {
+        if (req.method === 'GET') return sendJson(res, 200, { dir: services.dataRoot() });
+        if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+        const body = await readBody(req, res, sendJson); if (body === null) return;
+        const verdict = checkDataDir(body?.dir);
+        if (!verdict.ok) return sendJson(res, 400, { error: verdict.reason, dir: services.dataRoot() });
+        return sendJson(res, 200, { dir: services.setDataRoot(body.dir) });
+      } catch (error) {
+        return sendJson(res, 400, { error: 'root 切换失败', detail: String(error.message || error), dir: services.dataRoot?.() });
+      }
     }
     if (pathname.startsWith(apiPrefix + '/')) return sendJson(res, 404, { error: 'Unknown API route' });
 

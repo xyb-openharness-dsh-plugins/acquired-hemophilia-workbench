@@ -721,8 +721,9 @@
     openDialog('设置', body)
   }
   function setWorkspace() {
-    return '<section class="card"><h3>业务资料根目录</h3><p>当前（示意值）：<code>DSH 资料目录 / acquired-hemophilia</code></p>' +
-      '<button class="soft" data-action="open-store">更改位置…</button>' +
+    var cur = window.__AHA_DATA_ROOT__ || 'DSH 资料目录 / acquired-hemophilia（默认，未自定义）'
+    return '<section class="card"><h3>业务资料根目录</h3><p>当前：<code>' + esc(cur) + '</code></p>' +
+      '<button class="soft" data-action="open-store">查看更换方式…</button>' +
       '<p class="notice warn">口径：拒绝主目录、桌面、下载根目录、tmp 作为资料目录；源码目录不是资料目录。</p>' +
       '<div class="grid three"><div class="card"><b>原件区</b><p class="small-note">0 个文件 · 示意</p></div><div class="card"><b>派生区</b><p class="small-note">0 个文件 · 示意</p></div><div class="card"><b>数据库</b><p class="small-note">未创建 · 示意</p></div></div>' +
       '<h3 style="margin-top:14px">备份与恢复</h3><p class="small-note">本原型未接入备份；开发版按 02 号契约提供。</p></section>'
@@ -1140,7 +1141,7 @@
     }
     else if (act === 'settings') { settingsModal('workspace') }
     else if (act === 'settings-tab') { settingsModal(btn.getAttribute('data-tab')) }
-    else if (act === 'open-store') { openDialog('资料目录', '<p>开发版中选择本机目录；口径：拒绝主目录、桌面、下载根目录、tmp。</p><p>本原型为示意，目录未真实挂载。</p>') }
+    else if (act === 'open-store') { openDialog('资料目录', '<p>请在<b>面板顶栏「配置目录」</b>里更换：那里会调起系统的目录选择器，并拒绝主目录、桌面、下载根目录、tmp。</p><p>直接把原型页在浏览器里打开（不在 Desktop 里）时无法挂载目录，那一处仅为示意：目录未真实挂载。</p>') }
     else if (act === 'about') { openDialog('原型操作说明', '<p>全部数据为合成示例（两套档案，侧栏可切换）。</p><p>顶部「?」打开整页疾病概要；每页「和 AI 讨论」只填草稿不发送。</p><p>私密记录不进看板摘要、导出与 AI 上下文。</p>') }
     else if (act === 'dialog-close') { $('#dialog').close() }
     else if (act === 'agent-toggle') { setAgent(!state.agentOpen) }

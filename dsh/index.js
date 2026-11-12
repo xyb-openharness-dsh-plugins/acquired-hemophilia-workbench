@@ -43,13 +43,16 @@ export const API_BASE_HOSTED = `/api/${API_PREFIX}`
 export function createHostHandler(ctx, workbench) {
   const services = {
     version, displayVersion,
-    capabilities: ['bootstrap', 'health', 'write'],
+    capabilities: ['bootstrap', 'health', 'write', 'data-root'],
     bootstrap: () => workbench.bootstrap(),
     trialMatch: (keyword) => workbench.trialMatch(keyword),
     kinds: Workbench.KINDS,
     createProfile: (b) => workbench.createProfile(b),
     addEntry: (key, kind, b) => workbench.addEntry(key, kind, b),
     setPrivacy: (b) => workbench.setPrivacy(b.profileKey, b.kind, b.id, b.private),
+    /* 资料目录：面板「配置目录」走这两个，服务端再判一遍口径 */
+    dataRoot: () => workbench.dataRoot,
+    setDataRoot: (dir) => workbench.setDataRoot(dir),
   }
   const inner = createHandler({ apiBase: API_BASE_HOSTED, publicDir: PUBLIC_DIR, services })
   return (req, res) => {

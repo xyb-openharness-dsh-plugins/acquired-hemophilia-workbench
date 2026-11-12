@@ -1,6 +1,6 @@
 {
   "name": "@xyb-community/acquired-hemophilia-workbench",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "获得性血友病（AHA）患者与照护者的本机病程资料工作台：把出血发作、aPTT 与Ⅷ因子活性、抑制物滴度、血红蛋白、止血与免疫抑制治疗整理成可核对、可回溯的材料，并整理成就诊能带着走的问题清单。",
   "private": true,
   "type": "module",
